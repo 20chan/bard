@@ -1,12 +1,16 @@
 import * as discord from 'discord.js';
 import * as voice from '@discordjs/voice';
 import { logger } from './logger';
+import { streamMusic } from './commands/music';
 
 export type CommandFunction = (message: discord.Message) => Promise<void>;
 export type CommandRegister = {
   head: string;
   handler: CommandFunction;
 };
+
+let connection: voice.VoiceConnection | null = null;
+const player = voice.createAudioPlayer();
 
 const debugVoiceState: CommandFunction = async (message) => {
   const cache = message.member!.guild.voiceStates.cache;
@@ -38,12 +42,29 @@ const joinVoice: CommandFunction = async (message) => {
   }
 
   logger.info(`joined channel ${voiceChannel.name}`);
-  voice.joinVoiceChannel({
+  connection = voice.joinVoiceChannel({
     guildId: voiceChannel.guildId,
     channelId: voiceChannel.id,
     adapterCreator: voiceChannel.guild.voiceAdapterCreator,
   });
+  connection.subscribe(player);
 };
+
+const play: CommandFunction = async (message) => {
+  if (!connection) {
+    return;
+  }
+  // 일단은 돌아가게
+  const url = message.content.split(' ')[1];
+
+  logger.info(`enter voice state:ready ${url}`);
+  await voice.entersState(connection, voice.VoiceConnectionStatus.Ready, 20e3);
+  logger.info(`start play ${url}`);
+  const source = await streamMusic(url);
+  player.play(source);
+
+  logger.info(`end play ${url}`);
+}
 
 export const commands: CommandRegister[] = [
   {
@@ -53,5 +74,9 @@ export const commands: CommandRegister[] = [
   {
     head: 'join',
     handler: joinVoice,
+  },
+  {
+    head: 'play',
+    handler: play,
   },
 ];
