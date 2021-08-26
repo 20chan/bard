@@ -50,6 +50,15 @@ const joinVoice: CommandFunction = async (message) => {
   connection.subscribe(player);
 };
 
+const leaveVoice: CommandFunction = async (message) => {
+  if (!connection) {
+    return;
+  }
+
+  connection.destroy();
+  await message.channel.send('leaved channel');
+};
+
 const play: CommandFunction = async (message) => {
   if (!connection) {
     return;
@@ -66,6 +75,21 @@ const play: CommandFunction = async (message) => {
   logger.info(`end play ${url}`);
 }
 
+const stop: CommandFunction = async (message) => {
+  player.stop();
+  await message.channel.send('stopped');
+};
+
+const pause: CommandFunction = async (message) => {
+  player.pause();
+  await message.channel.send('paused');
+};
+
+const resume: CommandFunction = async (message) => {
+  player.unpause();
+  await message.channel.send('resumed');
+};
+
 export const commands: CommandRegister[] = [
   {
     head: '`d vc',
@@ -76,7 +100,23 @@ export const commands: CommandRegister[] = [
     handler: joinVoice,
   },
   {
+    head: 'leave',
+    handler: leaveVoice,
+  },
+  {
     head: 'play',
     handler: play,
+  },
+  {
+    head: 'stop',
+    handler: stop,
+  },
+  {
+    head: 'pause',
+    handler: pause,
+  },
+  {
+    head: 'resume',
+    handler: resume,
   },
 ];
