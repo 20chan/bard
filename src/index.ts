@@ -25,7 +25,10 @@ client.on('messageCreate', async message => {
   if (message.content.startsWith('`')) {
     const content = message.content.substr(1);
 
-    const command = commands.filter(x => content.startsWith(x.head))?.[0];
+    const command = commands.filter(x => {
+      const heads = typeof x.head === 'string' ? [x.head] : x.head;
+      return heads.some(y => content.startsWith(y));
+    })?.[0];
     if (command) {
       logger.info('got message', {
         command,
@@ -33,7 +36,11 @@ client.on('messageCreate', async message => {
         from: message.member?.user?.username,
         fromNickname: message.member?.nickname,
       });
-      await command.handler(message);
+      try {
+        await command.handler(message);
+      } catch (e) {
+        logger.error('error while executing command', e);
+      }
     }
   }
 });

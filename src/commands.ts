@@ -1,16 +1,17 @@
 import * as discord from 'discord.js';
 import * as voice from '@discordjs/voice';
 import { logger } from './logger';
-import { streamMusic } from './commands/music';
+import { parseTrack, streamMusic, Track } from './commands/music';
 
 export type CommandFunction = (message: discord.Message) => Promise<void>;
 export type CommandRegister = {
-  head: string;
+  head: string | string[];
   handler: CommandFunction;
 };
 
 let connection: voice.VoiceConnection | null = null;
 const player = voice.createAudioPlayer();
+const queue: Track[] = [];
 
 const debugVoiceState: CommandFunction = async (message) => {
   const cache = message.member!.guild.voiceStates.cache;
@@ -64,15 +65,21 @@ const play: CommandFunction = async (message) => {
     return;
   }
   // 일단은 돌아가게
-  const url = message.content.split(' ')[1];
+  const query = message.content.split(' ').splice(1).join(' ');
 
-  logger.info(`enter voice state:ready ${url}`);
+  logger.info(`enter voice state:ready ${query}`);
+
+  const track = await parseTrack(query);
+  logger.info('track parsed', track);
+
   await voice.entersState(connection, voice.VoiceConnectionStatus.Ready, 20e3);
-  logger.info(`start play ${url}`);
-  const source = await streamMusic(url);
+  logger.info(`start play ${query}`);
+  await message.channel.send(`now playing: [${track.title}](${track.url})`);
+
+  const source = await streamMusic(track);
   player.play(source);
 
-  logger.info(`end play ${url}`);
+  logger.info(`end play ${query}`);
 }
 
 const stop: CommandFunction = async (message) => {
@@ -90,6 +97,10 @@ const resume: CommandFunction = async (message) => {
   await message.channel.send('resumed');
 };
 
+const echo: CommandFunction = async (message) => {
+  await message.channel.send(JSON.stringify(message.content));
+}
+
 export const commands: CommandRegister[] = [
   {
     head: '`d vc',
@@ -104,7 +115,7 @@ export const commands: CommandRegister[] = [
     handler: leaveVoice,
   },
   {
-    head: 'play',
+    head: ['play', 'p'],
     handler: play,
   },
   {
@@ -118,5 +129,9 @@ export const commands: CommandRegister[] = [
   {
     head: 'resume',
     handler: resume,
+  },
+  {
+    head: 'echo',
+    handler: echo,
   },
 ];
