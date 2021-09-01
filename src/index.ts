@@ -27,7 +27,15 @@ client.on('messageCreate', async message => {
 
     const command = commands.filter(x => {
       const heads = typeof x.head === 'string' ? [x.head] : x.head;
-      return heads.some(y => content.startsWith(y));
+      return heads.some(y => {
+        if (content.startsWith(y)) {
+          const next = content.substr(y.length)[0];
+          if (next === undefined || next === ' ') {
+            return true;
+          }
+        }
+        return false;
+      });
     })?.[0];
     if (command) {
       logger.info('got message', {

@@ -1,7 +1,7 @@
 import * as discord from 'discord.js';
 import * as voice from '@discordjs/voice';
 import { logger } from './logger';
-import { parseTrack, streamMusic, Track } from './commands/music';
+import * as music from './commands/music';
 
 export type CommandFunction = (message: discord.Message) => Promise<void>;
 export type CommandRegister = {
@@ -10,8 +10,6 @@ export type CommandRegister = {
 };
 
 let connection: voice.VoiceConnection | null = null;
-const player = voice.createAudioPlayer();
-const queue: Track[] = [];
 
 const debugVoiceState: CommandFunction = async (message) => {
   const cache = message.member!.guild.voiceStates.cache;
@@ -48,7 +46,9 @@ const joinVoice: CommandFunction = async (message) => {
     channelId: voiceChannel.id,
     adapterCreator: voiceChannel.guild.voiceAdapterCreator,
   });
-  connection.subscribe(player);
+  connection.subscribe(music.player);
+
+  await voice.entersState(connection, voice.VoiceConnectionStatus.Ready, 20e3);
 };
 
 const leaveVoice: CommandFunction = async (message) => {
@@ -61,6 +61,9 @@ const leaveVoice: CommandFunction = async (message) => {
 };
 
 const play: CommandFunction = async (message) => {
+  if (!connection || connection.state.status !== voice.VoiceConnectionStatus.Ready) {
+    await joinVoice(message);
+  }
   if (!connection) {
     return;
   }
@@ -69,36 +72,181 @@ const play: CommandFunction = async (message) => {
 
   logger.info(`enter voice state:ready ${query}`);
 
-  const track = await parseTrack(query);
+  const track = await music.parseTrack(query);
   logger.info('track parsed', track);
 
-  await voice.entersState(connection, voice.VoiceConnectionStatus.Ready, 20e3);
-  logger.info(`start play ${query}`);
-  await message.channel.send(`now playing: [${track.title}](${track.url})`);
+  if (music.isPlaying()) {
+    await message.channel.send({
+      embeds: [
+        {
+          title: 'now playing',
+          description: `[${track.title}](${track.url})`,
+        },
+      ],
+    });
+  } else {
+    await message.channel.send({
+      embeds: [
+        {
+          title: 'enqueued',
+          description: `[${track.title}](${track.url})`,
+        },
+      ],
+    });
+  }
 
-  const source = await streamMusic(track);
-  player.play(source);
+  music.enqueue(track);
+  logger.info(`queued ${query}`);
+  await music.start();
 
   logger.info(`end play ${query}`);
 }
 
 const stop: CommandFunction = async (message) => {
-  player.stop();
+  music.stop();
   await message.channel.send('stopped');
 };
 
 const pause: CommandFunction = async (message) => {
-  player.pause();
+  music.player.pause();
   await message.channel.send('paused');
 };
 
 const resume: CommandFunction = async (message) => {
-  player.unpause();
+  music.player.unpause();
   await message.channel.send('resumed');
 };
 
+const skip: CommandFunction = async (message) => {
+  await music.next();
+  await message.channel.send('skipped');
+};
+
+const queue: CommandFunction = async (message) => {
+  if (music.queue.length === 0) {
+    await message.channel.send('queue empty');
+    return;
+  }
+
+  const prefix = (i: number) => i === music.index ? '>>' : '    ';
+  const pad = (x: number) => x.toString().padStart(2, '0');
+
+  const lines = music.queue.map((x, i) => `${prefix(i)}${pad(i)} [${x.title}](${x.url})`);
+  const content = lines.join('\n');
+  await message.channel.send({
+    embeds: [
+      {
+        title: 'queue',
+        description: content,
+      },
+    ],
+  });
+};
+
+const loop: CommandFunction = async (message) => {
+  if (!connection) {
+    await message.channel.send('youre not in voice channel');
+    return;
+  }
+  if (!music.isPlaying) {
+    await message.channel.send('not playing');
+    return;
+  }
+  if (music.loop) {
+    music.setLoop(null);
+    await message.channel.send({
+      embeds: [
+        {
+          title: 'loop',
+          description: 'loop off',
+        },
+      ],
+    });
+  } else {
+    music.setLoop({
+      start: music.index,
+      end: music.index,
+    });
+    const current = music.queue[music.index];
+    await message.channel.send({
+      embeds: [
+        {
+          title: 'loop',
+          description: `loop on: [${current.title}](${current.url})`,
+        },
+      ],
+    });
+  }
+};
+
+const loopQueue: CommandFunction = async (message) => {
+  if (!connection) {
+    await message.channel.send('youre not in voice channel');
+    return;
+  }
+  if (!music.isPlaying) {
+    await message.channel.send('not playing');
+    return;
+  }
+  if (music.loop && music.loop.end === -1) {
+    music.setLoop(null);
+    await message.channel.send({
+      embeds: [
+        {
+          title: 'loop queue',
+          description: 'loop queue off',
+        },
+      ],
+    });
+  } else {
+    music.setLoop({
+      start: 0,
+      end: -1,
+    });
+    await message.channel.send({
+      embeds: [
+        {
+          title: 'loop queue',
+          description: `loop queue on`,
+        },
+      ],
+    });
+  }
+};
+
 const echo: CommandFunction = async (message) => {
-  await message.channel.send(JSON.stringify(message.content));
+  await message.channel.send({
+    embeds: [
+      {
+        title: 'echo',
+        description: JSON.stringify(message.content),
+      },
+    ],
+  });
+};
+
+const stat: CommandFunction = async (message) => {
+  const tracks = music.queue.map(x => x.title);
+  const conn = connection?.state.status ?? 'null';
+
+  const description = [
+    `voice status: ${conn}`,
+    `player status: ${music.player.state.status}`,
+    `index: ${music.index}`,
+    `loop: ${JSON.stringify(music.loop)}`,
+    `playing: ${music.playing}`,
+    `tracks:`,
+    tracks.join('\n'),
+  ].join('\n');
+  
+  await message.channel.send({
+    embeds: [
+      {
+        title: 'stat',
+        description,
+      },
+    ],
+  });
 }
 
 export const commands: CommandRegister[] = [
@@ -131,7 +279,27 @@ export const commands: CommandRegister[] = [
     handler: resume,
   },
   {
+    head: 'skip',
+    handler: skip,
+  },
+  {
+    head: ['q', 'queue'],
+    handler: queue,
+  },
+  {
+    head: ['loop', 'repeat', 'l'],
+    handler: loop,
+  },
+  {
+    head: ['loopQueue', 'lq'],
+    handler: loopQueue,
+  },
+  {
     head: 'echo',
     handler: echo,
   },
+  {
+    head: 'stat',
+    handler: stat,
+  }
 ];
