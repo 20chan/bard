@@ -28,7 +28,7 @@ client.on('messageCreate', async message => {
     const command = commands.filter(x => {
       const heads = typeof x.head === 'string' ? [x.head] : x.head;
       return heads.some(y => {
-        if (content.startsWith(y)) {
+        if (content.toLowerCase().startsWith(y.toLowerCase())) {
           const next = content.substr(y.length)[0];
           if (next === undefined || next === ' ') {
             return true;
