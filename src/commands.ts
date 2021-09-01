@@ -56,6 +56,7 @@ const leaveVoice: CommandFunction = async (message) => {
     return;
   }
 
+  music.setLoop(null);
   connection.destroy();
   await message.channel.send('leaved channel');
 };
@@ -104,6 +105,7 @@ const play: CommandFunction = async (message) => {
 
 const stop: CommandFunction = async (message) => {
   music.stop();
+  music.setLoop(null);
   await message.channel.send('stopped');
 };
 
