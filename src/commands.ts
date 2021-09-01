@@ -56,6 +56,7 @@ const leaveVoice: CommandFunction = async (message) => {
     return;
   }
 
+  music.queue.length = 0;
   music.setLoop(null);
   connection.destroy();
   await message.channel.send('leaved channel');
